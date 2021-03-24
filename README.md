@@ -12,17 +12,16 @@ We use https://pivx.ccore.online/ as explorer.
 > pivxd -zmqpubrawtx=tcp://127.0.0.1:28331 -rpcuser=*** -rpcpassword=*** -rpcallowip=127.0.0.1 -server=1 -rpcport=51473 -daemon=1
 3) Fill ***, coinmarketcap-api-key, BOT_API_TOKEN_TELEGRAM, PIVX_CCORE_API_KEY in pm2_pivxHeroBot.json file
    
-
-    "NODE_ENV": "PRODUCTION",
-    "PIVX_RPC_USER":"***",
-    "PIVX_RPC_PASS":"***",
-    "PIVX_RPC_PORT":"51473",
-    "PIVX_CCORE_API_KEY":"get from @jimwal"
-    "CMC_API_KEY": "get from http://pro.coinmarketcap.com",
-    "market": "BTC-PIVX",
-    "BOT_API_TOKEN_TELEGRAM": "get from @BotFather",
-	"TELEGRAM_SESSION_HOST": "127.0.0.1",
-	"TELEGRAM_SESSION_PORT": 6379
+    "NODE_ENV": "PRODUCTION",  
+    "PIVX_RPC_USER":"***",  
+    "PIVX_RPC_PASS":"***",  
+    "PIVX_RPC_PORT":"51473",  
+    "PIVX_CCORE_API_KEY":"get from @jimwal",  
+    "CMC_API_KEY": "get from http://pro.coinmarketcap.com",  
+    "market": "BTC-PIVX",  
+    "BOT_API_TOKEN_TELEGRAM": "get from @BotFather",  
+    "TELEGRAM_SESSION_HOST": "127.0.0.1",  
+    "TELEGRAM_SESSION_PORT": 6379  
 
 4) Install nodejs & pm2
 >sudo apt install nodejs  
