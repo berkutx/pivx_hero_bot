@@ -18,7 +18,8 @@
       "watch": true,
       "ignore_watch": [
         "node_modules",
-        "logs"
+        "logs",
+	"pivx.dat"
       ],
       "min_uptime": 10000,
       "max_restarts": 3,
