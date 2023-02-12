@@ -219,9 +219,9 @@ class BlockchainMonitor {
         });
         if (!found) {
             this.chatsByAddresses.get(address).chats.push({id: chatId, alias: alias});
-            context.bot.telegram.sendMessage(chatId, `Success! You are watching: ${address}, current value: ${value}`);
+            this.bot.telegram.sendMessage(chatId, `Success! You are watching: ${address}, current value: ${value}`);
         } else {
-            context.bot.telegram.sendMessage(chatId, `You are already watching ${address}, current value: ${value}`);
+            this.bot.telegram.sendMessage(chatId, `You are already watching ${address}, current value: ${value}`);
         }
         await this.appendToFile(address, chatId, alias);
     }
