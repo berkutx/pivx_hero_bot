@@ -1,12 +1,19 @@
-var winston = require('winston');
-winston.emitErrs = true;
+const {createLogger, format, transports } = require('winston');
 
-var logger = new winston.Logger({
+const { combine, timestamp, label, prettyPrint } = format;
+//winston.emitErrs = true;
+
+var logger = createLogger({
+    format: format.combine(
+        timestamp(),
+        format.splat(),
+        format.simple()
+    ),
     transports: [
-        new winston.transports.File({
+        new transports.File({
             timestamp: true,
             level: 'debug',
-            filename: 'logs/all-logs.log',
+            filename: 'logs/log_' + (process.env.INSTANCE_ID ? process.env.INSTANCE_ID : 0) + '_.log',
             handleExceptions: true,
             humanReadableUnhandledException: true,
             json: true,
@@ -14,20 +21,20 @@ var logger = new winston.Logger({
             maxFiles: 5,
             colorize: false
         }),
-        new winston.transports.Console({
+        new transports.Console({
             timestamp: true,
             level: 'debug',
             handleExceptions: true,
             humanReadableUnhandledException: true,
-            json: false,
+            json: true,
             colorize: true
         })
     ],
     exitOnError: false
 });
-if (process.env.NODE_ENV === "PRODUCTION") {
+if (process.env.NODE_ENV === "production") {
     logger.transports.console.level = 'info';
     logger.transports.file.level = 'info';
 }
 
-module.exports = {Logger: logger};
+module.exports.Logger=logger;

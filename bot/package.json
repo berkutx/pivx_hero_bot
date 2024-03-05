@@ -3,16 +3,18 @@
   "private": true,
   "version": "1.0.0",
   "dependencies": {
+    "axios": "^0.21.4",
+    "chart.js": "latest",
+    "chartjs-node-canvas": "latest",
+    "coingecko-api": "latest",
     "lodash": "^4.17.11",
-    "axios": "^0.19.2",
-    "coinmarketcap-api": "latest",
-    "redis": "^3.0.2",
+    "redis": "^3.1.1",
     "telegraf": "^3.38.0",
     "telegraf-i18n": "^6.6.0",
     "telegraf-inline-menu": "^4.0.1",
     "telegraf-ratelimit": "^2.0.0",
     "telegraf-session-redis": "^5.1.0",
-    "winston": "^2.4.4",
-    "zeromq": "^5.2.0"
+    "winston": "3.8.2",
+    "zeromq": "^6.0.0-beta.16"
   }
 }

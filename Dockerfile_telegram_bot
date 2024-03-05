@@ -1,0 +1,6 @@
+FROM python
+
+RUN apt update && \
+    apt install -y nodejs npm redis build-essential libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+
+ENTRYPOINT ["bash", "-c", "redis-server --daemonize yes && cd /pivxherobot && npm install && export DEBUG=* && node pivx_hero_bot.js"]

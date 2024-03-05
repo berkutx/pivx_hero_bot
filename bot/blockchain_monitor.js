@@ -1,5 +1,5 @@
 let logger = require("./helpers/logger.js").Logger
-const PivxWorker = require('./pivxWalletWorker')
+const PivxWorker = require('./walletWorker_PIVX')
 const EventEmitter = require('events');
 const fs = require('fs')
 const _ = require('lodash')

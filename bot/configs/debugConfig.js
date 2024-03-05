@@ -1,6 +1,6 @@
 let DebugConfig = {
     redis: {
-        db: 3,
+        db: 1,
         prefix: "pivxherobot_debug"
     }
 }

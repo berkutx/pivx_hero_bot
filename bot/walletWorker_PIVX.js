@@ -1,94 +1,69 @@
 const _ = require("lodash");
+const RpcHelper = require('./helpers/rpcHelper');
 const logger = require('./helpers/logger').Logger;
+
 var zmq = require('zeromq');
 const http = require('http');
 const https = require('https');
-const rpcUser = process.env.PIVX_RPC_USER;
-const rpcPass = process.env.PIVX_RPC_PASS;
-const rpcPort = process.env.PIVX_RPC_PORT;
 const ccoreAPIKey = process.env.PIVX_CCORE_API_KEY;
-const rpcHost = "127.0.0.1";
+
 const zmqHostUrl = "tcp://127.0.0.1:28331"; // ZMQ for rawtx
-async function sendJsonByRPC(obj) {
-    return new Promise((resolve, reject) => {
-        let json = JSON.stringify(obj);
-        const httpOpts = {
-            hostname: rpcHost,
-            port: rpcPort,
-            method: 'POST',
-            headers: {
-                'Content-Type': 'test/plain',
-                'Content-Length': json.length,
-                'Authorization': 'Basic ' + new Buffer(rpcUser + ':' + rpcPass).toString('base64')
-            }
-        };
-        let httpRequest = http.request(httpOpts);
-        let doCall = true;
-        httpRequest.on('response', function (response) {
-            let responseData = '';
-            response.on('data', function (data) {
-                responseData += data;
-            });
-            response.on('end', function () {
-                if (!doCall) return; // already rejected
-                try {
-                    let parsed = JSON.parse(responseData);
-                    return resolve(parsed);
-                } catch (e) {
-                    return reject(new Error('Failed to parse response: ' + responseData + ". err: " + e));
-                }
-            });
-        });
-        httpRequest.on('error', function (err) {
-            doCall = false;
-            return reject(err);
-        });
-        httpRequest.end(json);
-    });
-}
 
 const CHECK_MN_INTERVAL_S = 20;
 
-var sock = zmq.socket('sub');
-sock.connect(zmqHostUrl);
-sock.subscribe('rawtx');
-
+const rpcUser = process.env.PIVX_RPC_USER;
+const rpcPass = process.env.PIVX_RPC_PASS;
+const rpcPort = process.env.PIVX_RPC_PORT;
+const rpcHost = process.env.PIVX_RPC_HOST;
+let rpcHelper = new RpcHelper(rpcHost, rpcPort, rpcUser, rpcPass);
 let commandEmitter;
-
-sock.on('message', async function (topic, message) {
-    if (topic.toString() === 'rawtx') {
-        let rawTx = message.toString('hex');
-        try {
-            logger.debug(`rawTx= ${rawTx}`)
-            let answer = await sendJsonByRPC({method: "decoderawtransaction", params: [rawTx]});
-            logger.debug(`decodedTx= ${JSON.stringify(answer.result)}`)
-            let addressesFromTransaction = new Set()
-            for (let out of answer.result.vout)
-                if (out.scriptPubKey && out.scriptPubKey.addresses)
-                    for (let addr of out.scriptPubKey.addresses)
-                        if (!addressesFromTransaction.has(addr))
-                            addressesFromTransaction.add(addr)
-            for (let addr of addressesFromTransaction.keys()) {
-                logger.debug("Updated address: " + addr)
-                if (commandEmitter)
-                    commandEmitter.emit("updateAddress", addr);
+async function runZMQ() {
+    const sock = new zmq.Subscriber
+    sock.connect(zmqHostUrl)
+    sock.subscribe("rawtx")
+    for await (const [topic, msg] of sock) {
+        // logger.debug("received a message related to:", topic.toString(), "containing message len:", msg.length)
+        if (topic.toString() === 'rawtx') {
+            let rawTx = msg.toString('hex');
+            try {
+                logger.debug(`rawTx= ${rawTx}`)
+                let answer = await rpcHelper.SendPost({method: "decoderawtransaction", params: [rawTx]})
+                logger.debug(`decodedTx= ${JSON.stringify(answer.result)}`)
+                let addressesFromTransaction = new Set()
+                for (let out of answer.result.vout)
+                    if (out.scriptPubKey && out.scriptPubKey.addresses)
+                        for (let addr of out.scriptPubKey.addresses)
+                            if (!addressesFromTransaction.has(addr))
+                                addressesFromTransaction.add(addr)
+                for (let addr of addressesFromTransaction.keys()) {
+                    logger.debug("Updated address: " + addr)
+                    if (commandEmitter)
+                        commandEmitter.emit("updateAddress", addr);
+                }
+            } catch (err) {
+                logger.error(err);
             }
-        } catch (err) {
-            logger.error(err);
         }
     }
-});
+}
 
 let PrevMNAddresses;
 let busyMasterNodeInfo = false;
 let busyBlockchainInfo = false;
-
+async function getBlockchainInfo() {
+    try {
+        let answer = await rpcHelper.SendPost({method: "getblockchaininfo"})
+        return answer
+    } catch (e) {
+        return e
+    }
+}
 async function getMNInfoHandler() {
     if (busyMasterNodeInfo)
         return;
     try {
         busyMasterNodeInfo = true;
-        let answer = await sendJsonByRPC({method: "listmasternodes", params: []});
+        let answer = await rpcHelper.SendPost({method: "listmasternodes", params: []});
         let stat_mnByNet = new Map();
         let nowAddresses = new Map();
         if (answer.result) {
@@ -143,13 +118,12 @@ async function getMNInfoHandler() {
         setTimeout(() => {
             busyMasterNodeInfo = false;
         }, 245 * 1000);
-
     }
 }
 
 async function getBudgetsHandler() {
     try {
-        let answer = await sendJsonByRPC({method: "getbudgetinfo", params: []});
+        let answer = await rpcHelper.SendPost({method: "getbudgetinfo", params: []});
         if (answer.result) {
             commandEmitter.emit('budgets', answer.result);
         } else
@@ -166,7 +140,7 @@ async function getSoftForks() {
         busyBlockchainInfo = true;
         if (!commandEmitter)
             return;
-        let answer = (await sendJsonByRPC({method: "getblockchaininfo"})).result;
+        let answer = (await rpcHelper.SendPost({method: "getblockchaininfo"})).result;
         if (answer && answer["softforks"] && answer["softforks"].length > 0) {
             commandEmitter.emit("softforks", answer["softforks"]);
         } else
@@ -187,6 +161,13 @@ setInterval(getSoftForks, CHECK_MN_INTERVAL_S * 5 * 1000)
 function SetEmitter(emitter) {
     commandEmitter = emitter;
 }
+
+(async () => {
+    let res = await getBlockchainInfo()
+    let str = JSON.stringify(res)
+    logger.debug(`getBlockchainInfo: ${str}`)
+    runZMQ()
+})()
 
 /**
  * Get balance from api https://pivx.ccore.online/ext/getbalance/Addr

@@ -1,4 +1,4 @@
-let logger = require("./helpers/logger.js").Logger
+const logger = require('./helpers/logger').Logger;
 const axios = require('axios')
 const Telegraf = require('telegraf')
 const Extra = require('telegraf/extra')
@@ -11,9 +11,17 @@ const BlockchainMonitor = require("./blockchain_monitor").BlockchainMonitor
 
 let BOT_API_TOKEN_TELEGRAM = process.env.BOT_API_TOKEN_TELEGRAM;
 
-let ConfModule = process.env.PRODUCTION === "1" ? require("./configs/productionConfig") : require("./configs/debugConfig");
-const Config = ConfModule.Config;
-const Messages = require("./configs/messages");
+let ConfModule = process.env.PRODUCTION === "1" ? require("./configs/productionConfig") : require("./configs/debugConfig")
+const Config = ConfModule.Config
+const Messages = require("./configs/messages")
+
+const {ChartJSNodeCanvas} = require('chartjs-node-canvas')
+const CoinGecko = require('coingecko-api')
+const fs = require('fs')
+
+const CoinGeckoClient = new CoinGecko();
+let CoinGecko_Stat = {};
+const CoinGecko_interval_s = 25;
 
 let redisStore = {
     host: process.env.TELEGRAM_SESSION_HOST || '127.0.0.1',
@@ -83,7 +91,6 @@ async function DoCBQueryActionOnSession(ctx, action, needSave) {
             })
         }
     })
-
 }
 
 function ReplyLangMenuAsync(_ctx) {
@@ -303,34 +310,11 @@ async function showMNStat(ctx) {
             let mnSummary = `MN: ${mnStat.ip4 + mnStat.ip6 + mnStat.onion}(ip4:${mnStat.ip4}, ip6:${mnStat.ip6}, onion: ${mnStat.onion})`;
             let str = `<code>${mnSummary}\n</code>`;
             let stream = await DownLoadFileContent("http://178.254.23.111/~pub/DN/DN_masternode_count7.png")
-            ctx.replyWithPhoto({source: stream},
+            await ctx.replyWithPhoto({source: stream},
                 {
                     caption: str,
                     parse_mode: "HTML"
                 });
-        } else
-            ctx.reply("Please wait, collecting...", ReturnKeyboardMarkup(ctx))
-    } catch (e) {
-        logger.error(e);
-        ctx.reply("Inner error, write to admin, please.", ReturnKeyboardMarkup(ctx))
-    }
-}
-
-async function showStat(ctx) {
-    try {
-        let marketMess = "";
-        if (CMC_Pivx_Stat)
-            marketMess = `Summary: ${CMC_Pivx_Stat["usd"]}$, Rank: ${CMC_Pivx_Stat["rank"]}\n` +
-                `1H: ${CMC_Pivx_Stat["change1h"]}, 24H: ${CMC_Pivx_Stat["change24h"]}, 7d: ${CMC_Pivx_Stat["change7d"]}\n` +
-                `MN price: ${10000 * CMC_Pivx_Stat["usd"]}$`;
-
-        const chatId = ctx.chat.id;
-        const market = "BTC-PIVX";
-        let mnStat = pivxBlockchain.GetMNStat();
-        if (mnStat.ip4 > 0) {
-            let mnSummary = `MN: ${mnStat.ip4 + mnStat.ip6 + mnStat.onion}(ip4:${mnStat.ip4}, ip6:${mnStat.ip6}, onion: ${mnStat.onion})`;
-            let str = `<code>${mnSummary}\n${marketMess}\n</code>`;
-            ctx.reply(str, ReturnKeyboardMarkup(ctx));
         } else
             ctx.reply("Please wait, collecting...", ReturnKeyboardMarkup(ctx))
     } catch (e) {
@@ -433,31 +417,163 @@ bot.catch(error => {
     logger.error(error)
 });
 
-const CMC_API_KEY = process.env.CMC_API_KEY;
-
 let BlockchainMonitorByCoin = new Map();
 let pivxBlockchain = new BlockchainMonitor("pivx", bot);
 BlockchainMonitorByCoin.set("pivx", pivxBlockchain);
 
-// -----
-const CoinMarketCap = require('coinmarketcap-api')
+const width = 512;
+const height = 512;
+const chartJSNodeCanvas = new ChartJSNodeCanvas({width, height, backgroundColour: null});
 
-const coinmarketcap = new CoinMarketCap(CMC_API_KEY)
-let CMC_Pivx_Stat = {usd: "wait", rank: "wait", change1h: "wait"};
-const CMC_interval_s = 300; // 10000 per month on free account => ~300s pause
+async function generateNewChart(type, labels, data, options) {
+    const configuration = {
+        type: type,
+        data: {
+            labels: labels,
+            datasets: [{
+                display: false,
+                label: 'USD',
+                data: data,
+                borderColor: 'rgba(75, 192, 192, 0.8)',
+                tension: 0.4
+            }]
+        },
+        options: options
+    }
+    return chartJSNodeCanvas.renderToBuffer(configuration, "image/png")
+    // return chartJSNodeCanvas.renderToStream(configuration, "image/png")
+}
+
+const chartOptions = {
+    legend: {
+        display: false,
+        labels: {
+            fontColor: '#348632'
+        }
+    },
+    plugins: {
+        title: {
+            fontSize: 48,
+            display: true,
+            text: "PIVX price, 48H"
+        }
+    },
+    scales: {
+        y: {
+            gridLines: {
+                borderDash: [8, 4],
+                color: "#0c2f0c"
+            },
+            ticks: {
+                beginAtZero: true,
+                fontSize: 24,
+                precision: 3,
+                callback: (value) => value + '$',
+                color: "#28d0a1"
+            }
+        },
+        x: {
+            ticks: {fontSize: 24, fontFamily: "'Roboto', sans-serif", color: "#28d0a1"}
+        },
+    }
+}
+
+async function saveTestChart() {
+    let data = []
+    let labels = []
+    let chartData = await CoinGeckoClient.coins.fetchMarketChart("pivx", {
+        vs_currency: "usd",
+        days: "14",
+        interval: "daily"
+    });
+    for (const chartDatum of chartData.data.prices) {
+        labels.push(new Date(chartDatum[0]).getUTCHours())
+        data.push(chartDatum[1])
+    }
+
+    let canvasStream = await generateNewChart("line", labels, data, chartOptions);
+    const outTestPng = fs.createWriteStream(__dirname + '/test.png')
+    canvasStream.pipe(outTestPng)
+    outTestPng.on('finish', () => console.log('The test.png file was created.'))
+}
+
+// saveTestChart();
+
 setInterval(async () => {
-    let res = await coinmarketcap.getQuotes({symbol: 'pivx'});
-    let coin = res.data.PIVX;
-    let quote_USD = coin.quote.USD;
-    let usd = parseFloat(quote_USD.price).toFixed(2);
-    let rank = coin.cmc_rank;
-    CMC_Pivx_Stat["usd"] = usd;
-    CMC_Pivx_Stat["change1h"] = quote_USD.percent_change_1h.toFixed(2) + "%";
-    CMC_Pivx_Stat["change24h"] = quote_USD.percent_change_24h.toFixed(2) + "%";
-    CMC_Pivx_Stat["change7d"] = quote_USD.percent_change_7d.toFixed(2) + "%";
-    CMC_Pivx_Stat["rank"] = rank;
-}, CMC_interval_s * 1000);
+    let simpleTask = CoinGeckoClient.simple.price({
+        ids: "pivx",
+        include_24hr_vol: true,
+        include_last_updated_at: true,
+        vs_currencies: ["btc", "usd"]
+    });
+    let chartTask = CoinGeckoClient.coins.fetchMarketChart("pivx", {
+        vs_currency: "usd",
+        days: "14",
+        interval: "daily"
+    });
+    let results = await Promise.all([simpleTask, chartTask]);
 
+    let data = []
+    let labels = []
+    let chartData = results[1].data.prices
+
+    logger.warn(JSON.stringify(results[1]))
+
+    // logger.info(JSON.stringify(results[1].data, null, 4))
+    for (const chartDatum of chartData) {
+        labels.push(new Date(chartDatum[0]).getDate())
+        data.push(chartDatum[1])
+    }
+
+    let coin = results[0].data.pivx;
+    let usd = parseFloat(coin.usd).toFixed(3);
+    let btc = parseFloat(coin.btc).toFixed(8);
+    let vol24Usd = parseFloat(coin.usd_24h_vol).toFixed(0);
+    CoinGecko_Stat["usd"] = usd;
+    CoinGecko_Stat["btc"] = btc;
+    CoinGecko_Stat["vol24_usd"] = vol24Usd;
+    CoinGecko_Stat.chartPriceStream = await generateNewChart("line", labels, data, chartOptions);
+}, CoinGecko_interval_s * 1000);
+
+// async function showStat(ctx) {
+//     try {
+//         let marketMess = "";
+//         if (CMC_Pivx_Stat)
+//             marketMess = `Summary: ${CMC_Pivx_Stat["usd"]}$, Rank: ${CMC_Pivx_Stat["rank"]}\n` +
+//                 `1H: ${CMC_Pivx_Stat["change1h"]}, 24H: ${CMC_Pivx_Stat["change24h"]}, 7d: ${CMC_Pivx_Stat["change7d"]}\n` +
+//                 `MN price: ${10000 * CMC_Pivx_Stat["usd"]}$`;
+//
+//         const chatId = ctx.chat.id;
+//         const market = "BTC-PIVX";
+//         let mnStat = pivxBlockchain.GetMNStat();
+//         if (mnStat.ip4 > 0) {
+//             let mnSummary = `MN: ${mnStat.ip4 + mnStat.ip6 + mnStat.onion}(ip4:${mnStat.ip4}, ip6:${mnStat.ip6}, onion: ${mnStat.onion})`;
+//             let str = `<code>${mnSummary}\n${marketMess}\n</code>`;
+//             ctx.reply(str, ReturnKeyboardMarkup(ctx));
+//         } else
+//             ctx.reply("Please wait, collecting...", ReturnKeyboardMarkup(ctx))
+//     } catch (e) {
+//         logger.error(e);
+//         ctx.reply("Inner error, write to admin, please.", ReturnKeyboardMarkup(ctx))
+//     }
+// }
+
+async function showStat(ctx) {
+    try {
+        let marketMess = ""
+        let mnStat = pivxBlockchain.GetMNStat()
+        if (CoinGecko_Stat.usd && mnStat.ip4 > 0) {
+            marketMess = `Price: ${CoinGecko_Stat["usd"]}$, ${CoinGecko_Stat["btc"]}₿.\nVolume, 24H: ${CoinGecko_Stat["vol24_usd"]}`
+            let mnSummary = `MN: ${mnStat.ip4 + mnStat.ip6 + mnStat.onion}(ip4:${mnStat.ip4}, ip6:${mnStat.ip6}, onion: ${mnStat.onion})`;
+            let str = `<code>${mnSummary}\n${marketMess}\n</code>`
+            await ctx.replyWithPhoto({source: CoinGecko_Stat.chartPriceStream}, {caption: str, parse_mode: "HTML"})
+        } else
+            ctx.reply("Please wait, collecting info from core-wallet and CoinGecko...", ReturnKeyboardMarkup(ctx))
+    } catch (e) {
+        logger.error(e);
+        ctx.reply("Inner error, write to @berkutx.", ReturnKeyboardMarkup(ctx))
+    }
+}
 
 setTimeout(async () => {
     await bot.launch();

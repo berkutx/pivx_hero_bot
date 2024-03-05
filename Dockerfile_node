@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1
+FROM debian:bookworm-slim
+
+ENV PIVX_USER=pivx
+ENV PIVX_CONF=/home/${PIVX_USER}/.pivx/pivx.conf
+
+# RUN addgroup --system pivxgroup
+# RUN adduser --system pivx --ingroup pivxgroup
+RUN apt-get -qq update && apt-get install -yq wget curl htop vim
+RUN curl -s https://api.github.com/repos/PIVX-Project/PIVX/releases/latest | grep "browser_download_url.*x86_64-linux-gnu.tar.gz" | cut -d : -f 2,3 | tr -d \" | wget -qi - -O /tmp/pivx.tar.gz
+
+COPY <<-EOT ${PIVX_CONF}
+zmqpubrawtx=tcp://127.0.0.1:28331
+server=1
+daemon=0
+EOT
+
+RUN mkdir -p /opt/pivx && \
+cd /opt && \
+tar --strip-components=1 -zxvf /tmp/pivx.tar.gz -C pivx && \
+rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+ln -sf /opt/pivx/bin/pivxd /usr/local/bin/pivxd && \
+ln -sf /opt/pivx/bin/pivx-cli /usr/local/bin/pivx-cli && \
+ln -sf /opt/pivx/bin/pivx-tx /usr/local/bin/pivx-tx && \
+adduser --uid 1000 --home /home/${PIVX_USER} --system ${PIVX_USER}  && \
+mkdir -p /home/${PIVX_USER}/.pivx/ && \
+mkdir -p /home/${PIVX_USER}/.pivx-params/ && \
+rm -rf /home/${PIVX_USER}/.pivx/blocks /home/${PIVX_USER}/.pivx/chainstate /home/${PIVX_USER}/.pivx/sporks /home/${PIVX_USER}/.pivx/zerocoin /home/${PIVX_USER}/.pivx/banlist.dat /home/${PIVX_USER}/.pivx/peers.dat && \
+cp /opt/pivx/share/pivx/* /home/${PIVX_USER}/.pivx-params/ && \
+chown -R ${PIVX_USER} /home/${PIVX_USER}
+
+USER pivx
+
+EXPOSE 51472
+VOLUME ["/home/pivx/.pivx"]
+WORKDIR /home/pivx
+
+ENTRYPOINT ["bash", "-c", "tar -zxvf /snapshot/PIVXsnapshotLatest.tgz       -C /home/${PIVX_USER}/.pivx && pivxd -rpcuser=$PIVX_RPC_USER -rpcpassword=$PIVX_RPC_PASS -rpcport=$PIVX_RPC_PORT -rpcallowip=172.0.0.0/8 -rpcbind=0.0.0.0"]

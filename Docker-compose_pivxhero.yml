@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  pivx_node:
+    env_file:
+      - .env
+    environment:
+      - PIVX_RPC_USER=${PIVX_RPC_USER}
+      - PIVX_RPC_PASS=${PIVX_RPC_PASS}
+      - PIVX_RPC_PORT=${PIVX_RPC_PORT}
+      - PIVX_RPC_ALLOWIP=127.0.0.1
+    volumes:
+      - ./snapshot_here:/snapshot:ro
+    build:
+      context: .
+      dockerfile: Dockerfile_node
+    container_name: pivxnode
+
+  pivx-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile_telegram_bot
+    volumes:
+      - ./bot:/pivxherobot
+    depends_on:
+      - pivx_node
+    links:
+      - pivx_node
+    container_name: PIVX-HERO-TELEGRAM-BOT
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - PIVX_RPC_USER=${PIVX_RPC_USER}
+      - PIVX_RPC_PASS=${PIVX_RPC_PASS}
+      - PIVX_RPC_HOST=pivxnode
+      - PIVX_RPC_PORT=${PIVX_RPC_PORT}
+      - PIVX_CCORE_API_KEY=${PIVX_CCORE_API_KEY}
+      - BOT_API_TOKEN_TELEGRAM=${BOT_API_TOKEN_TELEGRAM}
+      - TELEGRAM_SESSION_HOST=127.0.0.1
+      - TELEGRAM_SESSION_PORT=6379
